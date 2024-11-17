@@ -4,6 +4,8 @@ import torch.nn.functional as F
 import numpy as np
 import os
 import time
+import json  # json 모듈 추가
+
 from utils.utils import *
 from model.AnomalyTransformer import AnomalyTransformer
 from data_factory.data_loader import get_loader_segment
@@ -35,6 +37,9 @@ class EarlyStopping:
         self.val_loss2_min = np.Inf
         self.delta = delta
         self.dataset = dataset_name
+    
+        
+        
 
     def __call__(self, val_loss, val_loss2, model, path):
         score = -val_loss
@@ -68,6 +73,11 @@ class Solver(object):
     def __init__(self, config):
 
         self.__dict__.update(Solver.DEFAULTS, **config)
+
+         # train_losses와 val_losses 리스트 초기화
+        self.train_losses = []
+        self.val_losses = []
+
 
         self.train_loader = get_loader_segment(self.data_path, batch_size=self.batch_size, win_size=self.win_size,
                                                mode='train',
@@ -192,8 +202,10 @@ class Solver(object):
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(loss1_list)
+            self.train_losses.append(train_loss)  # 훈련 손실 저장
 
             vali_loss1, vali_loss2 = self.vali(self.test_loader)
+            self.val_losses.append(vali_loss1)  # 검증 손실 저장
 
             print(
                 "Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} ".format(
@@ -203,6 +215,11 @@ class Solver(object):
                 print("Early stopping")
                 break
             adjust_learning_rate(self.optimizer, epoch + 1, self.lr)
+        # 최종적으로 손실 값을 파일로 저장
+        with open("train_loss_log.json", "w") as f:
+            json.dump(self.train_losses, f)
+        with open("val_loss_log.json", "w") as f:
+            json.dump(self.val_losses, f)
 
     def test(self):
         self.model.load_state_dict(
@@ -331,6 +348,15 @@ class Solver(object):
         pred = (test_energy > thresh).astype(int)
 
         gt = test_labels.astype(int)
+
+
+
+        # pred와 gt의 크기 일치시키기 (여기에 삽입)
+        min_len = min(len(pred), len(gt))
+        pred = pred[:min_len]
+        gt = gt[:min_len]
+
+
 
         print("pred:   ", pred.shape)
         print("gt:     ", gt.shape)
